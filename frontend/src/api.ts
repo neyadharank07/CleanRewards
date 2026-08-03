@@ -67,6 +67,32 @@ export type Mission = {
   points: number;
   image_url: string;
   status: "open" | "completed";
+  source?: "seeded" | "admin" | "robot";
+  robot_id?: string;
+  detection_id?: string;
+  confidence?: number;
+  size?: "small" | "medium" | "large" | "multi";
+  expires_at?: string;
+  claimed_by?: string;
+  claimed_until?: string;
+};
+
+export type Robot = {
+  id: string; name: string; city: string;
+  notify_radius_miles: number;
+  battery: number; connected: boolean; online?: boolean;
+  lat: number | null; lng: number | null;
+  last_seen: string;
+  total_detections: number; missions_generated: number;
+  created_at: string;
+  api_key?: string; // returned only on registration
+};
+
+export type RobotDetection = {
+  id: string; robot_id: string; lat: number; lng: number;
+  confidence: number; size: string; object_count: number;
+  ai_objects: { label: string; confidence: number }[];
+  ai_size: string; created_at: string;
 };
 
 export type LeaderboardRow = {
@@ -151,6 +177,24 @@ export const api = {
     request<{ ok: boolean }>(`/admin/redemptions/${id}/reject?note=${encodeURIComponent(note)}`, { method: "POST" }),
   adminListUsers: () => request<any[]>("/admin/users"),
   adminToggleAdmin: (id: string) => request<{ ok: boolean; is_admin: boolean }>(`/admin/users/${id}/toggle-admin`, { method: "POST" }),
+
+  // Robots — admin
+  adminRegisterRobot: (body: { name: string; city: string; notify_radius_miles: number }) =>
+    request<Robot>("/admin/robots", { method: "POST", body: JSON.stringify(body) }),
+  adminListRobots: () => request<Robot[]>("/admin/robots"),
+  adminGetRobot: (id: string) =>
+    request<Robot & { detections: RobotDetection[]; patrols: any[] }>(`/admin/robots/${id}`),
+  adminDeleteRobot: (id: string) => request<{ ok: boolean }>(`/admin/robots/${id}`, { method: "DELETE" }),
+  adminSimulateDetection: (id: string) =>
+    request<{ ok: boolean; detection_id: string; mission_id: string; size: string; points: number }>(
+      `/admin/robots/${id}/simulate-detection`,
+      { method: "POST" },
+    ),
+
+  // Mission claims — user
+  claimMission: (id: string) => request<{ ok: boolean; reserved_until: string }>(`/missions/${id}/claim`, { method: "POST" }),
+  releaseMission: (id: string) => request<{ ok: boolean }>(`/missions/${id}/release`, { method: "POST" }),
+  myClaimedMissions: () => request<Mission[]>("/missions/mine-claimed"),
 };
 
 export type Redemption = {
@@ -164,4 +208,6 @@ export type AdminStats = {
   verified_cleanups: number; pending_review: number;
   reports: number; pending_redemptions: number;
   total_points_awarded: number;
+  robots?: number;
+  robot_detections?: number;
 };

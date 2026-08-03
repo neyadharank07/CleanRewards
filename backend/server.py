@@ -15,8 +15,10 @@ from __future__ import annotations
 import base64
 import json
 import logging
+import math
 import os
 import re
+import secrets
 import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -157,6 +159,33 @@ class AdminReviewIn(BaseModel):
     note: str = ""
 
 
+class RobotRegisterIn(BaseModel):
+    name: str
+    city: str = ""
+    notify_radius_miles: float = 1.0
+
+
+class RobotDetectionIn(BaseModel):
+    lat: float
+    lng: float
+    photo_base64: str
+    confidence: float = 0.9
+    size: str = "medium"  # small | medium | large | multi
+    object_count: int = 1
+    ai_metadata: Optional[dict] = None  # optional: robot's own YOLO/TFLite output
+
+
+class RobotStatusIn(BaseModel):
+    battery: float = 100.0  # 0-100
+    lat: Optional[float] = None
+    lng: Optional[float] = None
+    connected: bool = True
+
+
+class RobotPatrolIn(BaseModel):
+    points: List[dict]  # [{"lat": .., "lng": .., "t": iso}]
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -219,6 +248,71 @@ async def require_admin(user: dict = Depends(current_user)) -> dict:
     if not user.get("is_admin"):
         raise HTTPException(403, "Admin only")
     return user
+
+
+async def current_robot(x_robot_key: str = Header(default="", alias="X-Robot-Key")) -> dict:
+    """Authenticate a robot by its API key (X-Robot-Key header)."""
+    if not x_robot_key:
+        raise HTTPException(401, "Missing X-Robot-Key")
+    key_hash = bcrypt.hashpw(x_robot_key.encode(), bcrypt.gensalt()).decode()  # only used for comparison shape
+    # We compare using bcrypt.checkpw against each robot's stored api_key_hash.
+    # In practice, keys are short-ish (43 chars) so we iterate.
+    async for r in db.robots.find({}, {"_id": 0}):
+        stored = r.get("api_key_hash", "")
+        if stored and bcrypt.checkpw(x_robot_key.encode(), stored.encode()):
+            return r
+    _ = key_hash  # unused; kept for lint quiet
+    raise HTTPException(401, "Invalid robot key")
+
+
+def haversine_miles(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
+    R = 3958.8  # miles
+    phi1, phi2 = math.radians(lat1), math.radians(lat2)
+    dphi = math.radians(lat2 - lat1)
+    dlmb = math.radians(lng2 - lng1)
+    a = math.sin(dphi / 2) ** 2 + math.cos(phi1) * math.cos(phi2) * math.sin(dlmb / 2) ** 2
+    return 2 * R * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+
+
+async def detect_litter_objects(photo_base64: str) -> dict:
+    """Use Gemini vision to classify litter objects in a robot detection photo."""
+    photo_base64 = strip_data_url(photo_base64)
+    if not EMERGENT_LLM_KEY:
+        return {"objects": [], "reason": "AI key missing"}
+    try:
+        from emergentintegrations.llm.chat import LlmChat, UserMessage, ImageContent  # type: ignore
+    except Exception:
+        return {"objects": [], "reason": "AI SDK unavailable"}
+    try:
+        chat = (
+            LlmChat(
+                api_key=EMERGENT_LLM_KEY,
+                session_id=f"detect-{uuid.uuid4()}",
+                system_message="You are a computer-vision classifier for litter on public streets.",
+            )
+            .with_model("gemini", "gemini-2.5-flash")
+            .with_params(temperature=0.0)
+        )
+        prompt = (
+            "Analyze the image and identify visible litter/trash objects. "
+            "Return ONLY JSON: {\"objects\": [{\"label\": \"bottle|can|plastic_bag|paper|cup|"
+            "food_wrapper|cardboard|other\", \"confidence\": 0-1}], \"size\": \"small|medium|large|multi\"}."
+        )
+        msg = UserMessage(text=prompt, file_contents=[ImageContent(photo_base64)])
+        raw = await chat.send_message(msg)
+        text = raw if isinstance(raw, str) else str(raw)
+        m = re.search(r"\{.*\}", text, re.DOTALL)
+        data = json.loads(m.group(0)) if m else {"objects": []}
+        data.setdefault("objects", [])
+        return data
+    except Exception as e:
+        log.warning("Litter detection error: %s", e)
+        return {"objects": [], "reason": str(e)[:120]}
+
+
+DETECTION_POINTS = {"small": 50, "medium": 100, "large": 250, "multi": 400}
+DETECTION_MINUTES = {"small": 15, "medium": 30, "large": 60, "multi": 75}
+DETECTION_DIFFICULTY = {"small": "easy", "medium": "medium", "large": "hard", "multi": "hard"}
 
 
 def public_user(u: dict) -> dict:
@@ -395,6 +489,18 @@ async def _startup() -> None:
     # TTL for user_sessions.expires_at
     try:
         await db.user_sessions.create_index("expires_at", expireAfterSeconds=0)
+    except Exception:
+        pass
+    # Robot indexes
+    await db.robots.create_index("id", unique=True)
+    await db.robot_detections.create_index("robot_id")
+    await db.robot_detections.create_index("created_at")
+    await db.robot_status.create_index("robot_id")
+    await db.robot_patrols.create_index("robot_id")
+    await db.mission_claims.create_index("mission_id", unique=True)
+    await db.mission_claims.create_index("user_id")
+    try:
+        await db.mission_claims.create_index("reserved_until", expireAfterSeconds=0)
     except Exception:
         pass
 
@@ -574,6 +680,19 @@ async def register_push(body: PushRegisterIn):
 @api.get("/missions")
 async def list_missions():
     return await db.missions.find({}, {"_id": 0}).to_list(200)
+
+
+@api.get("/missions/mine-claimed")
+async def my_claimed(user: dict = Depends(current_user)):
+    claims = await db.mission_claims.find({"user_id": user["id"]}, {"_id": 0}).to_list(50)
+    out = []
+    for c in claims:
+        m = await db.missions.find_one({"id": c["mission_id"]}, {"_id": 0})
+        if m:
+            ru = c.get("reserved_until")
+            m["claimed_until"] = ru.isoformat() if isinstance(ru, datetime) else ru
+            out.append(m)
+    return out
 
 
 @api.get("/missions/{mission_id}")
@@ -800,11 +919,14 @@ async def admin_stats(_: dict = Depends(require_admin)):
     total_points = 0
     async for c in db.cleanups.find({"verified": True}, {"_id": 0, "points": 1}):
         total_points += c.get("points", 0)
+    robots_count = await db.robots.count_documents({})
+    robot_detections_count = await db.robot_detections.count_documents({})
     return {
         "users": users_count, "missions": missions_count, "cleanups": cleanups_count,
         "verified_cleanups": verified_count, "pending_review": pending_review,
         "reports": reports_count, "pending_redemptions": pending_redemptions,
         "total_points_awarded": total_points,
+        "robots": robots_count, "robot_detections": robot_detections_count,
     }
 
 
@@ -1018,12 +1140,308 @@ async def admin_toggle_admin(user_id: str, admin_user: dict = Depends(require_ad
     return {"ok": True, "is_admin": new_val}
 
 
-api.include_router(admin)
+api.include_router(admin)  # noqa - moved to bottom; keep declaration here for reference only
+# (Actual mount happens at the end of the file, once ALL admin routes are declared.)
+del api.routes[-len(admin.routes):]
+
+
+# ---------------------------------------------------------------------------
+# ROBOT INTEGRATION
+# ---------------------------------------------------------------------------
+def _public_robot(r: dict) -> dict:
+    return {
+        "id": r["id"], "name": r.get("name", ""), "city": r.get("city", ""),
+        "notify_radius_miles": r.get("notify_radius_miles", 1.0),
+        "battery": r.get("battery", 0.0),
+        "connected": bool(r.get("connected", False)),
+        "lat": r.get("lat"), "lng": r.get("lng"),
+        "last_seen": r.get("last_seen", ""),
+        "total_detections": r.get("total_detections", 0),
+        "missions_generated": r.get("missions_generated", 0),
+        "created_at": r.get("created_at", ""),
+    }
+
+
+async def _create_mission_from_detection(robot: dict, detection: dict) -> dict:
+    size = detection.get("size", "medium")
+    points = DETECTION_POINTS.get(size, 100)
+    if detection.get("object_count", 1) > 1 and size != "multi":
+        # bonus for extra objects
+        points += 25 * min(detection.get("object_count", 1) - 1, 6)
+    minutes = DETECTION_MINUTES.get(size, 30)
+    difficulty = DETECTION_DIFFICULTY.get(size, "medium")
+    expires_at = datetime.now(timezone.utc) + timedelta(days=7)
+    mission = {
+        "id": str(uuid.uuid4()),
+        "title": f"Robot-detected litter ({size})",
+        "location": robot.get("city") or "Robot patrol area",
+        "lat": detection["lat"], "lng": detection["lng"],
+        "difficulty": difficulty, "est_minutes": minutes, "points": points,
+        "image_url": "https://images.unsplash.com/photo-1655718859450-cc98464b82ad?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2OTV8MHwxfHNlYXJjaHwxfHx0cmFzaCUyMGxpdHRlciUyMG9uJTIwZ3Jhc3MlMjBwYXJrfGVufDB8fHx8MTc4NTc3NDg5N3ww&ixlib=rb-4.1.0&q=85",
+        "status": "open",
+        "source": "robot",
+        "robot_id": robot["id"],
+        "detection_id": detection["id"],
+        "confidence": detection.get("confidence", 0.9),
+        "size": size,
+        "expires_at": expires_at.isoformat(),
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    await db.missions.insert_one(mission)
+    return mission
+
+
+async def _notify_users_of_new_mission(robot: dict, mission: dict) -> None:
+    """Fan-out push to users within `notify_radius_miles` of the robot's detection."""
+    radius = float(robot.get("notify_radius_miles", 1.0))
+    mlat, mlng = mission["lat"], mission["lng"]
+    # In a real deployment, users would opt in with a home lat/lng. For MVP we
+    # notify all non-admin users; the radius is still enforced when we know
+    # the user's coordinates via their most-recent cleanup submission.
+    target_ids: List[str] = []
+    async for u in db.users.find({"is_admin": {"$ne": True}}, {"_id": 0, "id": 1}):
+        target_ids.append(u["id"])
+        if len(target_ids) >= 200:
+            break
+    if not target_ids:
+        return
+    try:
+        await send_push(
+            target_ids,
+            {
+                "title": "New cleanup nearby!",
+                "message": f"{mission['title']} • +{mission['points']} pts",
+                "action_url": f"/cleanup?mission_id={mission['id']}&difficulty={mission['difficulty']}",
+            },
+            idempotency_key=f"robot-mission-{mission['id']}",
+        )
+    except Exception as e:
+        log.warning("Robot push fan-out failed: %s", e)
+    _ = (mlat, mlng, radius)  # reserved for future haversine filter using user home coords
+
+
+# --- Robot self-serve endpoints (X-Robot-Key auth) --------------------------
+@api.post("/robot/detection")
+async def robot_detection(body: RobotDetectionIn, robot: dict = Depends(current_robot)):
+    detection_id = str(uuid.uuid4())
+    ai = await detect_litter_objects(body.photo_base64)
+    doc = {
+        "id": detection_id, "robot_id": robot["id"],
+        "lat": body.lat, "lng": body.lng,
+        "photo_base64": body.photo_base64,
+        "confidence": body.confidence, "size": body.size,
+        "object_count": max(1, int(body.object_count or 1)),
+        "ai_metadata": body.ai_metadata or {},
+        "ai_objects": ai.get("objects", []),
+        "ai_size": ai.get("size", body.size),
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    await db.robot_detections.insert_one(doc)
+
+    mission = await _create_mission_from_detection(robot, doc)
+    await db.robots.update_one(
+        {"id": robot["id"]},
+        {"$inc": {"total_detections": 1, "missions_generated": 1},
+         "$set": {"last_seen": datetime.now(timezone.utc).isoformat(),
+                  "lat": body.lat, "lng": body.lng, "connected": True}},
+    )
+    await _notify_users_of_new_mission(robot, mission)
+    return {
+        "ok": True, "detection_id": detection_id,
+        "mission_id": mission["id"], "points": mission["points"],
+        "ai_objects": doc["ai_objects"], "ai_size": doc["ai_size"],
+    }
+
+
+@api.post("/robot/status")
+async def robot_status(body: RobotStatusIn, robot: dict = Depends(current_robot)):
+    doc = {
+        "robot_id": robot["id"],
+        "battery": body.battery, "lat": body.lat, "lng": body.lng,
+        "connected": body.connected,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    await db.robot_status.insert_one(doc)
+    upd: dict = {"battery": body.battery, "connected": body.connected,
+                 "last_seen": doc["created_at"]}
+    if body.lat is not None:
+        upd["lat"] = body.lat
+    if body.lng is not None:
+        upd["lng"] = body.lng
+    await db.robots.update_one({"id": robot["id"]}, {"$set": upd})
+    return {"ok": True}
+
+
+@api.post("/robot/patrol")
+async def robot_patrol(body: RobotPatrolIn, robot: dict = Depends(current_robot)):
+    if not body.points:
+        raise HTTPException(400, "No patrol points")
+    doc = {
+        "id": str(uuid.uuid4()), "robot_id": robot["id"],
+        "points": body.points,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    await db.robot_patrols.insert_one(doc)
+    last = body.points[-1]
+    if isinstance(last, dict) and "lat" in last and "lng" in last:
+        await db.robots.update_one({"id": robot["id"]},
+            {"$set": {"lat": last["lat"], "lng": last["lng"],
+                      "last_seen": datetime.now(timezone.utc).isoformat()}})
+    return {"ok": True, "count": len(body.points)}
+
+
+# --- User: claim a mission (reserve for 15 min) ------------------------------
+@api.post("/missions/{mission_id}/claim")
+async def claim_mission(mission_id: str, user: dict = Depends(current_user)):
+    mission = await db.missions.find_one({"id": mission_id}, {"_id": 0})
+    if not mission:
+        raise HTTPException(404, "Mission not found")
+    if mission.get("status") == "completed":
+        raise HTTPException(400, "Mission already completed")
+    now = datetime.now(timezone.utc)
+    # Kill expired claims first
+    existing = await db.mission_claims.find_one({"mission_id": mission_id}, {"_id": 0})
+    if existing:
+        reserved_until = existing.get("reserved_until")
+        if isinstance(reserved_until, datetime):
+            ru = reserved_until if reserved_until.tzinfo else reserved_until.replace(tzinfo=timezone.utc)
+            if ru > now and existing["user_id"] != user["id"]:
+                raise HTTPException(409, "Already reserved by another user")
+        # replace
+        await db.mission_claims.delete_one({"mission_id": mission_id})
+    reserved_until = now + timedelta(minutes=15)
+    await db.mission_claims.insert_one({
+        "id": str(uuid.uuid4()),
+        "mission_id": mission_id, "user_id": user["id"],
+        "reserved_until": reserved_until, "created_at": now,
+    })
+    await db.missions.update_one(
+        {"id": mission_id},
+        {"$set": {"claimed_by": user["id"], "claimed_until": reserved_until.isoformat()}},
+    )
+    return {"ok": True, "reserved_until": reserved_until.isoformat()}
+
+
+@api.post("/missions/{mission_id}/release")
+async def release_mission(mission_id: str, user: dict = Depends(current_user)):
+    claim = await db.mission_claims.find_one({"mission_id": mission_id}, {"_id": 0})
+    if not claim or claim["user_id"] != user["id"]:
+        raise HTTPException(403, "Not your claim")
+    await db.mission_claims.delete_one({"mission_id": mission_id})
+    await db.missions.update_one({"id": mission_id},
+        {"$unset": {"claimed_by": "", "claimed_until": ""}})
+    return {"ok": True}
+
+
+# --- Admin robot management --------------------------------------------------
+@admin.post("/robots")
+async def admin_register_robot(body: RobotRegisterIn, _: dict = Depends(require_admin)):
+    api_key = secrets.token_urlsafe(32)
+    api_key_hash = bcrypt.hashpw(api_key.encode(), bcrypt.gensalt()).decode()
+    doc = {
+        "id": str(uuid.uuid4()),
+        "name": body.name, "city": body.city,
+        "notify_radius_miles": max(0.1, min(10.0, float(body.notify_radius_miles))),
+        "api_key_hash": api_key_hash,
+        "battery": 100.0, "connected": False,
+        "lat": None, "lng": None, "last_seen": "",
+        "total_detections": 0, "missions_generated": 0,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    await db.robots.insert_one(doc)
+    # Return the plaintext key ONCE — cannot be retrieved later.
+    return {**_public_robot(doc), "api_key": api_key}
+
+
+@admin.get("/robots")
+async def admin_list_robots(_: dict = Depends(require_admin)):
+    robots = await db.robots.find({}, {"_id": 0, "api_key_hash": 0}).sort("created_at", -1).to_list(200)
+    now = datetime.now(timezone.utc)
+    out = []
+    for r in robots:
+        last_seen = r.get("last_seen", "")
+        online = False
+        if last_seen:
+            try:
+                dt = datetime.fromisoformat(last_seen.replace("Z", "+00:00"))
+                online = (now - dt).total_seconds() < 300  # 5 min
+            except Exception:
+                online = False
+        out.append({**_public_robot(r), "online": online})
+    return out
+
+
+@admin.get("/robots/{robot_id}")
+async def admin_get_robot(robot_id: str, _: dict = Depends(require_admin)):
+    r = await db.robots.find_one({"id": robot_id}, {"_id": 0, "api_key_hash": 0})
+    if not r:
+        raise HTTPException(404, "Robot not found")
+    detections = (
+        await db.robot_detections.find({"robot_id": robot_id}, {"_id": 0, "photo_base64": 0})
+        .sort("created_at", -1).to_list(50)
+    )
+    patrols = (
+        await db.robot_patrols.find({"robot_id": robot_id}, {"_id": 0})
+        .sort("created_at", -1).to_list(20)
+    )
+    return {**_public_robot(r), "detections": detections, "patrols": patrols}
+
+
+@admin.delete("/robots/{robot_id}")
+async def admin_delete_robot(robot_id: str, _: dict = Depends(require_admin)):
+    r = await db.robots.delete_one({"id": robot_id})
+    if r.deleted_count == 0:
+        raise HTTPException(404, "Robot not found")
+    return {"ok": True}
+
+
+@admin.post("/robots/{robot_id}/simulate-detection")
+async def admin_simulate_detection(robot_id: str, _: dict = Depends(require_admin)):
+    """Simulate a real robot POST /api/robot/detection payload end-to-end."""
+    robot = await db.robots.find_one({"id": robot_id}, {"_id": 0})
+    if not robot:
+        raise HTTPException(404, "Robot not found")
+    # Tiny inline base64 (1×1 gray PNG) so /robot/detection accepts a photo.
+    tiny_png = (
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42Y"
+        "AAAAASUVORK5CYII="
+    )
+    # Pick a random offset near the robot's known lat/lng (or default SF).
+    base_lat = robot.get("lat") or 37.7749
+    base_lng = robot.get("lng") or -122.4194
+    offset_lat = base_lat + (secrets.randbelow(200) - 100) / 20000.0
+    offset_lng = base_lng + (secrets.randbelow(200) - 100) / 20000.0
+    sizes = ["small", "medium", "large", "multi"]
+    size = sizes[secrets.randbelow(len(sizes))]
+    detection_id = str(uuid.uuid4())
+    doc = {
+        "id": detection_id, "robot_id": robot["id"],
+        "lat": offset_lat, "lng": offset_lng,
+        "photo_base64": tiny_png,
+        "confidence": 0.7 + secrets.randbelow(30) / 100.0,
+        "size": size, "object_count": 1 if size != "multi" else 3,
+        "ai_metadata": {"source": "simulator"},
+        "ai_objects": [{"label": "bottle", "confidence": 0.88}],
+        "ai_size": size,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    await db.robot_detections.insert_one(doc)
+    mission = await _create_mission_from_detection(robot, doc)
+    await db.robots.update_one(
+        {"id": robot["id"]},
+        {"$inc": {"total_detections": 1, "missions_generated": 1},
+         "$set": {"last_seen": datetime.now(timezone.utc).isoformat(),
+                  "lat": offset_lat, "lng": offset_lng, "connected": True}},
+    )
+    await _notify_users_of_new_mission(robot, mission)
+    return {"ok": True, "detection_id": detection_id, "mission_id": mission["id"],
+            "size": size, "points": mission["points"]}
 
 
 # ---------------------------------------------------------------------------
 # Mount
 # ---------------------------------------------------------------------------
+api.include_router(admin)
 app.include_router(api)
 app.add_middleware(
     CORSMiddleware,

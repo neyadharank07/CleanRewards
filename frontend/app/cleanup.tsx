@@ -123,6 +123,21 @@ export default function CleanupFlow() {
                 Location: {location ? `${location.lat.toFixed(4)}, ${location.lng.toFixed(4)}` : "Detecting..."}
               </Txt>
             </View>
+            {params.mission_id && (
+              <Button
+                title="Reserve this mission (15 min)"
+                variant="ghost"
+                testID="reserve-mission-button"
+                onPress={async () => {
+                  try {
+                    await api.claimMission(params.mission_id as string);
+                    show("Reserved for 15 minutes", "success");
+                  } catch (e: any) {
+                    show(e.message || "Reserve failed", "error");
+                  }
+                }}
+              />
+            )}
             <Button testID="cleanup-start-button" title="Start" onPress={() => setStep("before")} />
           </View>
         )}

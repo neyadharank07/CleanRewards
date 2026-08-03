@@ -51,8 +51,8 @@ export default function AdminHome() {
           <StatCard testID="admin-stat-pending" label="Pending review" value={stats?.pending_review ?? 0} icon="hourglass" tint={t.warning} />
           <StatCard testID="admin-stat-reports" label="Reports" value={stats?.reports ?? 0} icon="alert" tint={t.error} />
           <StatCard testID="admin-stat-pending-redemptions" label="Pending redemptions" value={stats?.pending_redemptions ?? 0} icon="gift" tint={t.warning} />
-          <StatCard testID="admin-stat-points" label="Points awarded" value={stats?.total_points_awarded ?? 0} icon="flash" tint={t.brand} />
-          <StatCard testID="admin-stat-verified" label="Verified" value={stats?.verified_cleanups ?? 0} icon="shield-checkmark" tint={t.brand} />
+          <StatCard testID="admin-stat-robots" label="Robots" value={stats?.robots ?? 0} icon="hardware-chip" tint={t.info} />
+          <StatCard testID="admin-stat-detections" label="Detections" value={stats?.robot_detections ?? 0} icon="scan" tint={t.brand} />
         </View>
 
         <Txt variant="subtitle" weight="medium" style={{ marginTop: spacing.md }}>Manage</Txt>
@@ -61,6 +61,7 @@ export default function AdminHome() {
         <NavRow testID="admin-nav-missions" icon="location" label="Missions" onPress={() => router.push("/admin/missions")} />
         <NavRow testID="admin-nav-rewards" icon="gift" label="Rewards" onPress={() => router.push("/admin/rewards")} />
         <NavRow testID="admin-nav-redemptions" icon="ticket" label="Redemptions" onPress={() => router.push("/admin/redemptions")} />
+        <NavRow testID="admin-nav-robots" icon="hardware-chip" label="Robots" onPress={() => router.push("/admin/robots")} />
         <NavRow testID="admin-nav-users" icon="people" label="Users" onPress={() => router.push("/admin/users")} />
       </ScrollView>
     </SafeAreaView>

@@ -103,6 +103,12 @@ export default function HomeScreen() {
                 style={[styles.missionCard, shadowCard, { backgroundColor: t.surface, borderColor: t.border }]}
               >
                 <Image source={{ uri: item.image_url }} style={styles.missionImg} contentFit="cover" />
+                {item.source === "robot" && (
+                  <View style={[styles.robotBadge, { backgroundColor: t.error }]}>
+                    <Ionicons name="hardware-chip" size={12} color="#FFF" />
+                    <Txt variant="small" weight="medium" color="#FFF">Robot</Txt>
+                  </View>
+                )}
                 <View style={{ padding: spacing.md, gap: spacing.xs }}>
                   <Txt weight="medium" numberOfLines={1}>{item.title}</Txt>
                   <Txt variant="caption" color={t.onSurfaceSecondary} numberOfLines={1}>{item.location}</Txt>
@@ -156,5 +162,6 @@ const styles = StyleSheet.create({
   statIcon: { width: 32, height: 32, borderRadius: radius.pill, alignItems: "center", justifyContent: "center" },
   missionCard: { width: 240, borderRadius: radius.lg, borderWidth: 1, overflow: "hidden" },
   missionImg: { width: "100%", height: 120 },
+  robotBadge: { position: "absolute", top: 8, right: 8, flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 8, paddingVertical: 2, borderRadius: radius.pill },
   pillsRow: { flexDirection: "row", gap: 6, marginTop: 4, flexWrap: "wrap" },
 });

@@ -13,7 +13,7 @@ type Pin = {
   id: string;
   title: string;
   subtitle: string;
-  status: "completed" | "open" | "reported";
+  status: "completed" | "open" | "reported" | "reserved" | "expired" | "robot-detected";
   lat: number;
   lng: number;
   onPress?: () => void;
@@ -23,7 +23,7 @@ export default function MapScreen() {
   const t = useTheme();
   const [pins, setPins] = useState<Pin[]>([]);
   const [refreshing, setRefreshing] = useState(false);
-  const [filter, setFilter] = useState<"all" | "open" | "completed" | "reported">("all");
+  const [filter, setFilter] = useState<"all" | "open" | "completed" | "reported" | "robot" | "reserved">("all");
 
   const load = useCallback(async () => {
     try {
@@ -32,16 +32,27 @@ export default function MapScreen() {
         api.allCleanups(),
         api.listReports(),
       ]);
-      const missionPins: Pin[] = (missions as Mission[]).map((m) => ({
-        id: `mission-${m.id}`,
-        title: m.title,
-        subtitle: `${m.location} • ${m.points} pts`,
-        status: m.status === "completed" ? "completed" : "open",
-        lat: m.lat,
-        lng: m.lng,
-        onPress: () =>
-          router.push({ pathname: "/cleanup", params: { mission_id: m.id, difficulty: m.difficulty } }),
-      }));
+      const now = Date.now();
+      const missionPins: Pin[] = (missions as Mission[]).map((m) => {
+        const expired = m.expires_at ? new Date(m.expires_at).getTime() < now : false;
+        const reserved = m.claimed_until ? new Date(m.claimed_until).getTime() > now : false;
+        let status: Pin["status"] = "open";
+        if (m.status === "completed") status = "completed";
+        else if (expired) status = "expired";
+        else if (reserved) status = "reserved";
+        else if (m.source === "robot") status = "robot-detected";
+        return {
+          id: `mission-${m.id}`,
+          title: m.title,
+          subtitle: `${m.location} • ${m.points} pts${m.source === "robot" ? " • robot" : ""}`,
+          status,
+          lat: m.lat,
+          lng: m.lng,
+          onPress: m.status !== "completed"
+            ? () => router.push({ pathname: "/cleanup", params: { mission_id: m.id, difficulty: m.difficulty } })
+            : undefined,
+        };
+      });
       const cleanupPins: Pin[] = cleanups.slice(0, 30).map((c: any, i: number) => ({
         id: `cleanup-${c.id || i}`,
         title: "Cleanup completed",
@@ -70,7 +81,13 @@ export default function MapScreen() {
     setRefreshing(false);
   };
 
-  const filtered = pins.filter((p) => filter === "all" || p.status === filter);
+  const filtered = pins.filter((p) => {
+    if (filter === "all") return true;
+    if (filter === "robot") return p.status === "robot-detected";
+    if (filter === "reserved") return p.status === "reserved";
+    if (filter === "open") return p.status === "open" || p.status === "robot-detected";
+    return p.status === filter;
+  });
 
   return (
     <SafeAreaView edges={["top"]} style={{ flex: 1, backgroundColor: t.surface }}>
@@ -85,7 +102,9 @@ export default function MapScreen() {
         <FlatList
           data={[
             { id: "all", label: "All" },
-            { id: "open", label: "Needs cleanup" },
+            { id: "open", label: "Open" },
+            { id: "robot", label: "Robot" },
+            { id: "reserved", label: "Reserved" },
             { id: "reported", label: "Reported" },
             { id: "completed", label: "Completed" },
           ]}
@@ -126,7 +145,18 @@ export default function MapScreen() {
         renderItem={({ item }) => {
           const pinBg =
             item.status === "completed" ? t.brand :
-            item.status === "reported" ? t.error : t.warning;
+            item.status === "reserved" ? t.info :
+            item.status === "expired" ? t.onSurfaceTertiary :
+            item.status === "reported" ? t.error :
+            item.status === "robot-detected" ? t.error :
+            t.warning;
+          const iconName =
+            item.status === "completed" ? "checkmark" :
+            item.status === "reserved" ? "time" :
+            item.status === "expired" ? "hourglass" :
+            item.status === "reported" ? "alert" :
+            item.status === "robot-detected" ? "hardware-chip" :
+            "leaf";
           return (
             <Pressable
               testID={`pin-${item.id}`}
@@ -135,7 +165,7 @@ export default function MapScreen() {
               style={[styles.row, shadowCard, { backgroundColor: t.surfaceSecondary }]}
             >
               <View style={[styles.pinDot, { backgroundColor: pinBg }]}>
-                <Ionicons name={item.status === "completed" ? "checkmark" : item.status === "reported" ? "alert" : "leaf"} size={16} color="#FFF" />
+                <Ionicons name={iconName as any} size={16} color="#FFF" />
               </View>
               <View style={{ flex: 1 }}>
                 <Txt weight="medium">{item.title}</Txt>
