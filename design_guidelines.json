@@ -1,0 +1,218 @@
+{
+  "app_name": "CleanRewards",
+  "personality": "1 iOS-Native Clean",
+  "personality_one_liner": "A clean, fitness-inspired civic companion that gamifies environmental impact with Apple-like clarity, smooth motion, and rewarding interactions.",
+  "color": {
+    "surface": "#FFFFFF",
+    "onSurface": "#1C1C1E",
+    "surfaceSecondary": "#F4F4F5",
+    "onSurfaceSecondary": "#3A3A3C",
+    "surfaceTertiary": "#E5E5EA",
+    "onSurfaceTertiary": "#8E8E93",
+    "surfaceInverse": "#1C1C1E",
+    "onSurfaceInverse": "#FFFFFF",
+    "brand": "#34C759",
+    "brandPrimary": "#34C759",
+    "onBrandPrimary": "#FFFFFF",
+    "brandSecondary": "#E8F8EE",
+    "onBrandSecondary": "#248A3D",
+    "brandTertiary": "#D0F2DD",
+    "onBrandTertiary": "#1A6B2D",
+    "success": "#34C759",
+    "onSuccess": "#FFFFFF",
+    "warning": "#FF9F0A",
+    "onWarning": "#FFFFFF",
+    "error": "#FF3B30",
+    "onError": "#FFFFFF",
+    "info": "#007AFF",
+    "onInfo": "#FFFFFF",
+    "border": "#E5E5EA",
+    "borderStrong": "#C7C7CC",
+    "divider": "#C6C6C8",
+    "dark": {
+      "surface": "#000000",
+      "onSurface": "#FFFFFF",
+      "surfaceSecondary": "#1C1C1E",
+      "onSurfaceSecondary": "#EBEBF5",
+      "surfaceTertiary": "#2C2C2E",
+      "onSurfaceTertiary": "#8E8E93",
+      "surfaceInverse": "#FFFFFF",
+      "onSurfaceInverse": "#000000",
+      "brand": "#30D158",
+      "brandPrimary": "#30D158",
+      "onBrandPrimary": "#000000",
+      "brandSecondary": "#1A3B22",
+      "onBrandSecondary": "#30D158",
+      "brandTertiary": "#20502E",
+      "onBrandTertiary": "#4AE371",
+      "success": "#30D158",
+      "onSuccess": "#000000",
+      "warning": "#FF9F0A",
+      "onWarning": "#000000",
+      "error": "#FF453A",
+      "onError": "#000000",
+      "info": "#0A84FF",
+      "onInfo": "#000000",
+      "border": "#38383A",
+      "borderStrong": "#48484A",
+      "divider": "#38383A"
+    }
+  },
+  "typography": {
+    "displayFontFamily": "Plus Jakarta Sans",
+    "textFontFamily": "Plus Jakarta Sans",
+    "scale": {
+      "sm": 12,
+      "base": 14,
+      "lg": 16,
+      "xl": 20,
+      "2xl": 24
+    }
+  },
+  "spacing": {
+    "rule": "Generous Apple-native padding. Group related elements tightly, separate distant elements cleanly. Ensure primary CTA is pinned to the bottom.",
+    "xs": 4,
+    "sm": 8,
+    "md": 12,
+    "lg": 16,
+    "xl": 24,
+    "2xl": 32,
+    "3xl": 48
+  },
+  "radius_tokens": {
+    "sm": 6,
+    "md": 12,
+    "lg": 20,
+    "pill": 999
+  },
+  "shadow_tier": 1,
+  "navigation": "bottom_tabs",
+  "icon_set": "Ionicons",
+  "glassmorphism": {
+    "enabled": true,
+    "do's": [
+      "Bottom tab bar when content scrolls behind",
+      "Sticky headers over scrolling content",
+      "Featured/Hero mission cards frosted glass overlay on photo backdrop"
+    ],
+    "dont's": [
+      "Form fields",
+      "Every button",
+      "Body text regions"
+    ]
+  },
+  "platform_libraries": {
+    "glass": {
+      "ios": "expo-glass-effect",
+      "android": "expo-blur",
+      "low_end_android_fallback": "solid surfaceSecondary"
+    },
+    "image": "expo-image",
+    "blur": "expo-blur",
+    "bottom_sheet": "@gorhom/bottom-sheet",
+    "animation": "react-native-reanimated",
+    "gesture": "react-native-gesture-handler"
+  },
+  "screens": [
+    {
+      "name": "Home",
+      "purpose": "Dashboard showing today's eco-impact progress, streak, and quick access to missions.",
+      "states": {
+        "loading": "Centered brand-colored spinner",
+        "empty": "Illustration of a pristine park + 'No active missions near you' + Primary CTA to 'Report Litter'",
+        "error": "Readable message + 'Retry' button"
+      },
+      "layout": "Header with greeting/date. Hero metric card (Ring/Progress for Today's points/impact). 2-column stats grid (Trash Collected, Hours, Leaderboard Rank, Streak). 'Start Cleanup' sticky FAB or prominent action button. Bottom section: Nearby mission cards."
+    },
+    {
+      "name": "Cleanup Flow",
+      "purpose": "Camera-first flow for capturing before and after photos of littered areas for AI verification.",
+      "states": {
+        "loading": "Camera initializing or 'Verifying impact with AI...' with skeleton UI",
+        "empty": "Not applicable",
+        "error": "Failed to upload or verify - Retry button"
+      },
+      "layout": "Full-screen camera view with safe-area overlays. Clean, pill-shaped shutter button. Overlay text instructions ('Take a photo of the litter'). Floating glass bottom sheet for confirmation."
+    },
+    {
+      "name": "Rewards",
+      "purpose": "A catalog for users to redeem their earned points for real-world items.",
+      "states": {
+        "loading": "Skeleton grids of reward cards",
+        "empty": "'More rewards coming soon' illustration",
+        "error": "Failed to load catalog - Retry"
+      },
+      "layout": "Points balance sticky at the top in a glass header. 2-column grid of reward cards with imagery, points cost, and titles. Clean image scrims for readability."
+    },
+    {
+      "name": "Leaderboard",
+      "purpose": "Gamification screen showing user ranking among community members.",
+      "states": {
+        "loading": "Skeleton list rows",
+        "empty": "'Be the first on the leaderboard' state",
+        "error": "Failed to load rankings"
+      },
+      "layout": "Segmented control (Weekly/Monthly/All-Time) pinned below header. Top 3 users highlighted in a podium-style block. Followed by a scrolling list of ranks. User's own sticky rank docked at bottom."
+    },
+    {
+      "name": "Profile",
+      "purpose": "User's impact resume, showcasing stats, earned badges, and settings.",
+      "states": {
+        "loading": "Spinner",
+        "empty": "Not applicable",
+        "error": "Failed to load profile"
+      },
+      "layout": "Header with Avatar and total points. 2-col stats summary (Hours, Cleanups). Horizontal scrolling row of Earned Badges (styled as rich icons or tinted containers). Settings list with Ionicons chevrons."
+    }
+  ],
+  "images": {
+    "hero_park": {
+      "url": "https://images.unsplash.com/photo-1640287807682-b3195cc6b320?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2NzV8MHwxfHNlYXJjaHwxfHxjbGVhbiUyMGNpdHklMjBwYXJrJTIwdHJlZXN8ZW58MHx8fHwxNzgzMjY1NDA3fDA&ixlib=rb-4.1.0&q=85",
+      "dark": "https://images.unsplash.com/photo-1690065587467-d0e0f6d778de?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2NzV8MHwxfHNlYXJjaHw0fHxjbGVhbiUyMGNpdHklMjBwYXJrJTIwdHJlZXN8ZW58MHx8fHwxNzgzMjY1NDA3fDA&ixlib=rb-4.1.0&q=85",
+      "alt": "A clean and sunny city park with trees"
+    },
+    "mission_before": {
+      "url": "https://images.unsplash.com/photo-1655718859450-cc98464b82ad?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2OTV8MHwxfHNlYXJjaHwxfHx0cmFzaCUyMGxpdHRlciUyMG9uJTIwZ3Jhc3MlMjBwYXJrfGVufDB8fHx8MTc4NTc3NDg5N3ww&ixlib=rb-4.1.0&q=85",
+      "alt": "Trash littered on grass in a park"
+    },
+    "reward_coffee": {
+      "url": "https://images.unsplash.com/photo-1507133750040-4a8f57021571?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NDQ2MzR8MHwxfHNlYXJjaHwxfHxsYXR0ZSUyMGFydCUyMGNvZmZlZSUyMHNob3B8ZW58MHx8fHwxNzg1Nzc0ODk3fDA&ixlib=rb-4.1.0&q=85",
+      "alt": "Latte art in a coffee shop"
+    },
+    "reward_movie": {
+      "url": "https://images.pexels.com/photos/7234386/pexels-photo-7234386.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+      "alt": "Popcorn in a movie theater"
+    },
+    "badge_nature": {
+      "url": "https://images.unsplash.com/photo-1585328000852-779be6a6582b?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1NzV8MHwxfHNlYXJjaHwxfHxlY28lMjBmcmllbmRseSUyMGdyZWVuJTIwbGVhZnxlbnwwfHx8fDE3ODU3NzQ5MTF8MA&ixlib=rb-4.1.0&q=85",
+      "alt": "Eco-friendly green leaf with droplets"
+    },
+    "reward_park_pass": {
+      "url": "https://images.unsplash.com/photo-1592859600972-1b0834d83747?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NTYxODl8MHwxfHNlYXJjaHwxfHxmb3Jlc3QlMjBuYXR1cmUlMjB0cmFpbHxlbnwwfHx8fDE3ODI5ODQwNzV8MA&ixlib=rb-4.1.0&q=85",
+      "alt": "A nature trail through a dense forest"
+    },
+    "badge_community": {
+      "url": "https://images.unsplash.com/photo-1599059813005-11265ba4b4ce?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1NzB8MHwxfHNlYXJjaHwxfHxjb21tdW5pdHklMjBwZW9wbGUlMjBoZWxwaW5nfGVufDB8fHx8MTc4NTc3NDkxMXww&ixlib=rb-4.1.0&q=85",
+      "alt": "People helping in a community drive"
+    }
+  },
+  "haptics": {
+    "primary_button_press": "impactMedium",
+    "tab_bar_change": "selection",
+    "camera_shutter": "impactHeavy",
+    "mission_complete": "notificationSuccess",
+    "reward_redeem": "notificationSuccess",
+    "toggle_switch": "impactLight"
+  },
+  "instructions_to_main_agent": [
+    "Strictly follow the iOS-Native Clean personality. This app should feel like Apple Health or a premium fitness tracker but repurposed for environmental action. Do not use generic Dribbble SaaS dashboard styling.",
+    "Implement the Plus Jakarta Sans font with 400/500 weights exclusively. Use size and color for hierarchy, never bold or heavy font weights.",
+    "The primary CTA ('Start Cleanup' or 'Report Litter') on scrollable screens MUST be pinned to the bottom in a fixed container over a glass background, allowing content to scroll beneath.",
+    "When placing text over any image (like the Hero mission card or Reward items), implement the mandatory 3-stop vertical gradient scrim layer to guarantee contrast.",
+    "Do not use emojis in the UI. For badges and rewards, utilize the real image URLs provided in the JSON, or construct them with Ionicons inside a 'brandTertiary' tinted rounded square container.",
+    "Apply Expo Glass effect on the Bottom Tab Bar, Sticky Headers, and the background of pinned Bottom CTAs. Test to ensure background content is sufficiently blurred and not fighting foreground text.",
+    "Ensure dark mode uses the specific dark token values, avoiding pure white/black harsh contrast where specified.",
+    "Follow 2-col grids for stats with space-between and a flexWrap structure for proper Apple-native padding. No cards filling 48% and awkwardly floating to the left.",
+    "Integrate the haptic feedback mapping defined in the JSON for the required events to make interactions feel physical and rewarding."
+  ]
+}
