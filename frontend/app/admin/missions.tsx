@@ -4,6 +4,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { Image } from "expo-image";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
+import * as ImagePicker from "expo-image-picker";
 
 import { api, Mission } from "@/src/api";
 import { useTheme } from "@/src/theme-context";
@@ -27,6 +28,28 @@ export default function AdminMissions() {
   const [minutes, setMinutes] = useState("30");
   const [points, setPoints] = useState("100");
   const [image, setImage] = useState("");
+  const [photo, setPhoto] = useState<{ base64: string; uri: string } | null>(null);
+
+  const pickPhoto = useCallback(async () => {
+    try {
+      const perm = await ImagePicker.requestCameraPermissionsAsync();
+      const launch = perm.status === "granted"
+        ? ImagePicker.launchCameraAsync
+        : ImagePicker.launchImageLibraryAsync;
+      const r = await launch({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        base64: true, quality: 0.5, allowsEditing: true, aspect: [4, 3],
+      });
+      if (r.canceled) return;
+      const a = r.assets[0];
+      if (a.base64) {
+        setPhoto({ base64: a.base64, uri: a.uri });
+        setImage(""); // photo takes precedence over URL
+      }
+    } catch (e: any) {
+      show(e.message || "Photo error", "error");
+    }
+  }, [show]);
 
   const load = useCallback(async () => {
     try { setItems(await api.listMissions()); } catch { /* noop */ }
@@ -37,15 +60,18 @@ export default function AdminMissions() {
     if (!title || !location) { show("Fill title and location", "error"); return; }
     setBusy(true);
     try {
+      const image_url = photo
+        ? `data:image/jpeg;base64,${photo.base64}`
+        : (image || undefined);
       await api.adminCreateMission({
         title, location,
         lat: parseFloat(lat), lng: parseFloat(lng),
         difficulty, est_minutes: parseInt(minutes, 10) || 30,
         points: parseInt(points, 10) || 100,
-        image_url: image || undefined,
+        image_url,
       });
       show("Mission created — users notified", "success");
-      setTitle(""); setLocation(""); setImage("");
+      setTitle(""); setLocation(""); setImage(""); setPhoto(null);
       setShowForm(false);
       await load();
     } catch (e: any) {
@@ -109,6 +135,17 @@ export default function AdminMissions() {
               })}
             </View>
             <Field label="Image URL (optional)" testID="new-mission-image" value={image} onChangeText={setImage} />
+            <Txt variant="caption" color={t.onSurfaceSecondary}>Or attach a photo</Txt>
+            <Pressable testID="new-mission-photo" onPress={pickPhoto} style={[styles.photoBox, { backgroundColor: t.surface, borderColor: t.border }]}>
+              {photo ? (
+                <Image source={{ uri: photo.uri }} style={{ width: "100%", height: "100%", borderRadius: radius.md }} contentFit="cover" />
+              ) : (
+                <View style={{ alignItems: "center", gap: spacing.xs }}>
+                  <Ionicons name="camera" size={28} color={t.brand} />
+                  <Txt variant="caption" color={t.onSurfaceSecondary}>Tap to capture or pick</Txt>
+                </View>
+              )}
+            </Pressable>
             <Button title="Create mission" testID="create-mission-submit" onPress={create} loading={busy} />
           </View>
         )}
@@ -116,7 +153,13 @@ export default function AdminMissions() {
         <Txt variant="subtitle" weight="medium">All missions</Txt>
         {items.map((m) => (
           <View key={m.id} testID={`mission-row-${m.id}`} style={[styles.row, { backgroundColor: t.surfaceSecondary }]}>
-            <Image source={{ uri: m.image_url }} style={{ width: 56, height: 56, borderRadius: radius.md }} contentFit="cover" />
+            {m.image_url ? (
+              <Image source={{ uri: m.image_url }} style={{ width: 56, height: 56, borderRadius: radius.md }} contentFit="cover" />
+            ) : (
+              <View style={{ width: 56, height: 56, borderRadius: radius.md, backgroundColor: t.brandSecondary, alignItems: "center", justifyContent: "center" }}>
+                <Ionicons name="leaf" size={22} color={t.onBrandSecondary} />
+              </View>
+            )}
             <View style={{ flex: 1 }}>
               <Txt weight="medium" numberOfLines={1}>{m.title}</Txt>
               <Txt variant="small" color={t.onSurfaceSecondary} numberOfLines={1}>{m.location}</Txt>
@@ -136,5 +179,6 @@ const styles = StyleSheet.create({
   top: { flexDirection: "row", alignItems: "center", padding: spacing.md, justifyContent: "space-between" },
   iconBtn: { width: 40, height: 40, borderRadius: radius.pill, alignItems: "center", justifyContent: "center" },
   form: { padding: spacing.md, borderRadius: radius.lg, gap: spacing.md },
+  photoBox: { height: 160, borderRadius: radius.md, borderWidth: 1, alignItems: "center", justifyContent: "center", overflow: "hidden" },
   row: { flexDirection: "row", gap: spacing.md, padding: spacing.md, borderRadius: radius.lg, alignItems: "center" },
 });

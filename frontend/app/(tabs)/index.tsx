@@ -61,7 +61,9 @@ export default function HomeScreen() {
 
         {/* Hero mission / today */}
         <View style={[styles.hero, shadowCard]}>
-          <Image source={{ uri: today?.image_url || HERO_URL }} style={StyleSheet.absoluteFillObject} contentFit="cover" />
+          {(today?.image_url || HERO_URL) ? (
+            <Image source={{ uri: today?.image_url || HERO_URL }} style={StyleSheet.absoluteFillObject} contentFit="cover" />
+          ) : null}
           <LinearGradient colors={["rgba(0,0,0,0)", "rgba(0,0,0,0.55)", "rgba(0,0,0,0.85)"]} style={StyleSheet.absoluteFillObject} />
           <View style={{ flex: 1 }} />
           <View style={{ padding: spacing.lg, gap: spacing.xs }}>
@@ -102,7 +104,13 @@ export default function HomeScreen() {
                 onPress={() => router.push({ pathname: "/cleanup", params: { mission_id: item.id, difficulty: item.difficulty } })}
                 style={[styles.missionCard, shadowCard, { backgroundColor: t.surface, borderColor: t.border }]}
               >
-                <Image source={{ uri: item.image_url }} style={styles.missionImg} contentFit="cover" />
+                {item.image_url ? (
+                  <Image source={{ uri: item.image_url }} style={styles.missionImg} contentFit="cover" />
+                ) : (
+                  <View style={[styles.missionImg, { backgroundColor: t.brandSecondary, alignItems: "center", justifyContent: "center" }]}>
+                    <Ionicons name="leaf" size={44} color={t.onBrandSecondary} />
+                  </View>
+                )}
                 {item.source === "robot" && (
                   <View style={[styles.robotBadge, { backgroundColor: t.error }]}>
                     <Ionicons name="hardware-chip" size={12} color="#FFF" />

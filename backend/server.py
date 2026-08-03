@@ -501,8 +501,10 @@ async def _startup() -> None:
     except Exception:
         pass
 
-    for m in SEED_MISSIONS:
-        await db.missions.update_one({"id": m["id"]}, {"$setOnInsert": m}, upsert=True)
+    # One-time cleanup: remove the old seeded demo missions so admins fully own
+    # the missions catalog. Robot-detected missions and admin-created ones stay.
+    await db.missions.delete_many({"id": {"$in": ["m1", "m2", "m3", "m4"]}})
+
     for r in SEED_REWARDS:
         await db.rewards.update_one({"id": r["id"]}, {"$setOnInsert": r}, upsert=True)
 
@@ -996,8 +998,10 @@ async def admin_create_mission(body: MissionCreateIn, _: dict = Depends(require_
         "title": body.title, "location": body.location,
         "lat": body.lat, "lng": body.lng,
         "difficulty": body.difficulty, "est_minutes": body.est_minutes,
-        "points": body.points, "image_url": body.image_url or "https://images.unsplash.com/photo-1655718859450-cc98464b82ad?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2OTV8MHwxfHNlYXJjaHwxfHx0cmFzaCUyMGxpdHRlciUyMG9uJTIwZ3Jhc3MlMjBwYXJrfGVufDB8fHx8MTc4NTc3NDg5N3ww&ixlib=rb-4.1.0&q=85",
+        "points": body.points,
+        "image_url": body.image_url or "",
         "status": "open",
+        "source": "admin",
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
     await db.missions.insert_one(mission)
