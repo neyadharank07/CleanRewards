@@ -1,0 +1,43 @@
+{
+  "summary": "Iteration 2 backend testing for CleanRewards new endpoints (A-I). Created /app/backend/tests/test_admin_and_new_flows.py with 29 pytest cases against the public EXPO_PUBLIC_BACKEND_URL. Result: 29/29 PASSED. Covered: (A) admin auth guard — /api/admin/stats returns 401 without token, 403 for non-admin JWT, and 200 with all 8 required fields for admin. (B) Emergent Google Auth /api/auth/session — empty body -> 422, empty session_id -> 400, bogus session_id -> 401 (upstream demobackend rejects). (C) signup returns is_admin=false; admin login returns is_admin=true. (D) Admin missions CRUD — create as non-admin 403, create as admin 200 (id returned + reflected in GET /api/missions), PATCH updates title, DELETE returns ok and subsequent GET returns 404. (E) Admin rewards — POST creates active reward, appears in GET /api/rewards, DELETE marks inactive and it disappears from catalog. (F) User redemptions — insufficient points -> 400; end-to-end happy path: user submits cleanup with tiny dummy photos (AI correctly returns verified=false), admin approves via /api/admin/cleanups/{id}/review which awards 50 pts (easy), user redeems a 10-cost admin-created reward -> 200 {id, status:pending, cost:10}, /api/me points decreased by exactly 10, /api/redemptions/mine lists it as pending. (G) Admin redemption flow — /api/admin/redemptions?status=pending includes it, POST .../fulfill returns ok with code starting 'CR-', user sees status='fulfilled' + code populated; second redemption then POST .../reject?note=test returns ok, points refunded to exact prior balance, user sees status='rejected'. (H) Admin users — GET /api/admin/users lists all, toggle-admin on other user flips false->true->false, toggle on self returns 400. (I) Push relay — POST /api/register-push with placeholder EMERGENT_PUSH_KEY returns 500 with proper JSON detail (no stack trace / no crash) — EXPECTED failure due to placeholder key, marked as graceful.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_admin_and_new_flows.py",
+    "/app/test_reports/pytest/pytest_iter2_results.xml"
+  ],
+  "action_items": [
+    "None — all new endpoints (A-I) behave per spec.",
+    "Push relay 500 with placeholder EMERGENT_PUSH_KEY is expected and graceful; when a real key is provisioned, re-verify /api/register-push returns 201 and the device_token is $addToSet'd onto users.push_tokens.",
+    "IMPORTANT for future test agents: this project's pytest.ini forces `-n 2 --dist loadscope`. Tests that share a module-scope fixture (like user_ctx) across MULTIPLE test classes will be split across workers and each worker will re-create the fixture, breaking cross-class state (e.g., mission_id / redemption_id chains). To run this iter2 file correctly, use `pytest -n 0 ...` OR ensure all interdependent classes share a single test module and a single worker via xdist grouping. I already verified 29/29 pass with `-n 0`."
+  ],
+  "critical_code_review_comments": [
+    "Redemption reject at server.py:986 refunds points via $inc BEFORE flipping status to 'rejected'. Because there is no transaction, if the second update fails a user could be refunded without status change. Low-severity but consider a Mongo transaction or a status-guarded update ({status:'pending'} in filter of the second update).",
+    "admin_fulfill_redemption (server.py:954) allows already-fulfilled redemptions to short-circuit with 'already:true' but idempotency for reject is not similarly protected — reject only guards with 'status != pending' -> 400, which is correct.",
+    "auth_session error handling (server.py:482-487) wraps httpx exceptions and maps to 401. Good, but non-200 upstream also maps to 401 without differentiating 4xx vs 5xx — acceptable per spec.",
+    "register_push (server.py:558) treats 401 upstream as 500 with generic message; consider mapping to 502 uniformly so clients can retry on transient upstream failures.",
+    "server.py is now 1035 lines. Recommend splitting into /app/backend/{auth,missions,cleanups,admin,rewards,push,ai}.py routers before it grows further.",
+    "Pydantic v2 deprecation: body.dict() at several sites (e.g., server.py:540, 901) should be model_dump().",
+    "SEED_MISSIONS status='open' is set on insert but admin_create_mission always sets 'open'; consider validating status transitions when admin PATCHes a mission (currently free-form string)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_admin_and_new_flows.py (created)"
+  ],
+  "success_rate": {
+    "backend": "100% (29/29 passed)",
+    "frontend": "N/A - not tested per request"
+  },
+  "seed_data_creation": "Created one TEST_user_<uuid8>@example.com user via /api/auth/signup, several TEST_-prefixed rewards (TEST_reward_cheap deleted, TEST_flow_reward left active with cost 10 for the redemption chain), and one TEST_mission_new mission (deleted after test). Two redemptions created against TEST_flow_reward (one fulfilled with generated CR-xxxxx code, one rejected+refunded). Multiple cleanups submitted by the test user with tiny placeholder base64 (Gemini correctly returned verified=false so status='pending_review' until admin approval). No production/seed data mutated. Admin user admin@cleanrewards.com preserved with is_admin=true.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Iter2 test file at /app/backend/tests/test_admin_and_new_flows.py covers ALL new endpoints A-I and passes 29/29 with `pytest -n 0`. Iter1 file test_cleanrewards_api.py still covers the original 20 endpoints. To re-run both: `pytest /app/backend/tests/ -n 0 -v`. If you must use the enforced -n 2 --dist loadscope, be aware the iter2 file's shared module-scope user_ctx fixture will be recreated per worker which is fine but breaks interdependent classes (e.g., TestRedemptionFlow) if they get split. Solution: keep interdependent classes in one module (already done) OR run this file with -n 0. Push relay endpoint requires real EMERGENT_PUSH_KEY — with placeholder it correctly returns 500 with JSON body (not a crash).",
+  "rca_of_issue": "No functional bugs found in any of the 9 new endpoint groups. Only one investigation-worthy behavior: initial pytest run under the default `-n 2 --dist loadscope` split TestAdminMissions / TestRedemptionFlow / TestAdminUsers across workers; each worker created its OWN user_ctx (module-scope), so class-level state variables like redemption_id set by worker-A were None on worker-B when it tried to fulfill. Fixed by running with `-n 0` (serial). This is a test infrastructure quirk, NOT a backend defect. Additionally, pydantic EmailStr rejects `.test` TLD as a reserved domain — updated test emails to `@example.com`."
+}

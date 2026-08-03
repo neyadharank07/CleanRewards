@@ -106,6 +106,10 @@ export default function ProfileScreen() {
         </Section>
 
         <Button title="Log out" variant="ghost" testID="profile-logout-button" onPress={() => logout().then(() => router.replace("/(auth)/login"))} style={{ marginTop: spacing.xl }} />
+
+        {user?.is_admin && (
+          <Button title="Admin Dashboard" testID="profile-admin-button" onPress={() => router.push("/admin")} style={{ marginTop: spacing.md }} />
+        )}
       </ScrollView>
     </SafeAreaView>
   );

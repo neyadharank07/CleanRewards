@@ -52,6 +52,7 @@ export type User = {
   volunteer_hours: number;
   current_streak: number;
   badges: string[];
+  is_admin: boolean;
   created_at: string;
 };
 
@@ -87,8 +88,8 @@ export const api = {
     request<{ access_token: string; user: User }>("/auth/signup", { method: "POST", body: JSON.stringify(body) }, false),
   login: (body: { email: string; password: string }) =>
     request<{ access_token: string; user: User }>("/auth/login", { method: "POST", body: JSON.stringify(body) }, false),
-  googleLogin: (body: { email: string; name?: string; picture?: string }) =>
-    request<{ access_token: string; user: User }>("/auth/google", { method: "POST", body: JSON.stringify(body) }, false),
+  sessionExchange: (session_id: string) =>
+    request<{ session_token: string; user: User }>("/auth/session", { method: "POST", body: JSON.stringify({ session_id }) }, false),
   resetPassword: (body: { email: string; new_password: string }) =>
     request<{ ok: boolean; message: string }>("/auth/reset-password", { method: "POST", body: JSON.stringify(body) }, false),
   me: () => request<User>("/me"),
@@ -120,5 +121,47 @@ export const api = {
   rewards: () => request<Reward[]>("/rewards"),
   badges: () => request<Badge[]>("/badges"),
   notifications: () => request<any[]>("/notifications"),
-  savePushToken: (token: string) => request<{ ok: boolean }>("/push-token", { method: "POST", body: JSON.stringify({ token }) }),
+  registerPush: (body: { user_id: string; platform: string; device_token: string }) =>
+    request<{ status: string }>("/register-push", { method: "POST", body: JSON.stringify(body) }, false),
+
+  // Redemptions (user)
+  createRedemption: (reward_id: string) =>
+    request<{ id: string; status: string; cost: number }>("/redemptions", { method: "POST", body: JSON.stringify({ reward_id }) }),
+  myRedemptions: () => request<Redemption[]>("/redemptions/mine"),
+
+  // Admin
+  adminStats: () => request<AdminStats>("/admin/stats"),
+  adminListCleanups: (status?: string) =>
+    request<any[]>(`/admin/cleanups${status ? `?status=${status}` : ""}`),
+  adminReviewCleanup: (id: string, approved: boolean, note = "") =>
+    request<{ ok: boolean }>(`/admin/cleanups/${id}/review`, { method: "POST", body: JSON.stringify({ approved, note }) }),
+  adminCreateMission: (body: {
+    title: string; location: string; lat: number; lng: number;
+    difficulty: string; est_minutes: number; points: number; image_url?: string;
+  }) => request<Mission>("/admin/missions", { method: "POST", body: JSON.stringify(body) }),
+  adminDeleteMission: (id: string) => request<{ ok: boolean }>(`/admin/missions/${id}`, { method: "DELETE" }),
+  adminCreateReward: (body: { title: string; cost: number; image: string; description: string }) =>
+    request<Reward>("/admin/rewards", { method: "POST", body: JSON.stringify(body) }),
+  adminDeleteReward: (id: string) => request<{ ok: boolean }>(`/admin/rewards/${id}`, { method: "DELETE" }),
+  adminListRedemptions: (status?: string) =>
+    request<any[]>(`/admin/redemptions${status ? `?status=${status}` : ""}`),
+  adminFulfillRedemption: (id: string, code?: string) =>
+    request<{ ok: boolean; code?: string }>(`/admin/redemptions/${id}/fulfill${code ? `?code=${encodeURIComponent(code)}` : ""}`, { method: "POST" }),
+  adminRejectRedemption: (id: string, note = "") =>
+    request<{ ok: boolean }>(`/admin/redemptions/${id}/reject?note=${encodeURIComponent(note)}`, { method: "POST" }),
+  adminListUsers: () => request<any[]>("/admin/users"),
+  adminToggleAdmin: (id: string) => request<{ ok: boolean; is_admin: boolean }>(`/admin/users/${id}/toggle-admin`, { method: "POST" }),
+};
+
+export type Redemption = {
+  id: string; reward_id: string; reward_title: string; cost: number;
+  status: "pending" | "fulfilled" | "rejected"; code: string; note: string;
+  created_at: string; fulfilled_at?: string; rejected_at?: string;
+};
+
+export type AdminStats = {
+  users: number; missions: number; cleanups: number;
+  verified_cleanups: number; pending_review: number;
+  reports: number; pending_redemptions: number;
+  total_points_awarded: number;
 };

@@ -3,6 +3,7 @@ import { FlatList, StyleSheet, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Image } from "expo-image";
 import { Ionicons } from "@expo/vector-icons";
+import { router } from "expo-router";
 
 import { api, Reward } from "@/src/api";
 import { useAuth } from "@/src/auth";
@@ -24,9 +25,10 @@ const REWARD_IMAGES: Record<string, string> = {
 
 export default function RewardsScreen() {
   const t = useTheme();
-  const { user } = useAuth();
+  const { user, refresh } = useAuth();
   const { show } = useToast();
   const [rewards, setRewards] = useState<Reward[]>([]);
+  const [busyId, setBusyId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -37,6 +39,19 @@ export default function RewardsScreen() {
 
   useEffect(() => { load(); }, [load]);
 
+  const redeem = async (item: Reward) => {
+    setBusyId(item.id);
+    try {
+      await api.createRedemption(item.id);
+      show("Redemption submitted! We'll notify you when it's ready.", "success");
+      await refresh();
+    } catch (e: any) {
+      show(e.message || "Redemption failed", "error");
+    } finally {
+      setBusyId(null);
+    }
+  };
+
   const points = user?.points ?? 0;
   const nextReward = [...rewards].sort((a, b) => a.cost - b.cost).find((r) => r.cost > points);
   const progress = nextReward ? Math.min(1, points / nextReward.cost) : 1;
@@ -44,7 +59,10 @@ export default function RewardsScreen() {
   return (
     <SafeAreaView edges={["top"]} style={{ flex: 1, backgroundColor: t.surface }}>
       <View style={{ padding: spacing.lg, gap: spacing.md }}>
-        <Txt variant="title" weight="medium">Rewards</Txt>
+        <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+          <Txt variant="title" weight="medium">Rewards</Txt>
+          <Button title="My redemptions" variant="ghost" testID="my-redemptions-button" onPress={() => router.push("/redemptions")} style={{ minHeight: 36, paddingHorizontal: 14 }} />
+        </View>
         <View style={[styles.balanceCard, { backgroundColor: t.brand }]}>
           <View style={{ flex: 1 }}>
             <Txt variant="caption" color="rgba(255,255,255,0.85)">YOUR BALANCE</Txt>
@@ -88,7 +106,8 @@ export default function RewardsScreen() {
                   title={canRedeem ? "Redeem" : "Locked"}
                   variant={canRedeem ? "primary" : "secondary"}
                   disabled={!canRedeem}
-                  onPress={() => show(canRedeem ? "Redemption coming soon!" : "Not enough points yet", canRedeem ? "success" : "info")}
+                  loading={busyId === item.id}
+                  onPress={() => redeem(item)}
                   testID={`redeem-${item.id}`}
                   style={{ marginTop: spacing.xs, minHeight: 40 }}
                 />
