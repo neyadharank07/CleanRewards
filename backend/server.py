@@ -254,14 +254,11 @@ async def current_robot(x_robot_key: str = Header(default="", alias="X-Robot-Key
     """Authenticate a robot by its API key (X-Robot-Key header)."""
     if not x_robot_key:
         raise HTTPException(401, "Missing X-Robot-Key")
-    key_hash = bcrypt.hashpw(x_robot_key.encode(), bcrypt.gensalt()).decode()  # only used for comparison shape
-    # We compare using bcrypt.checkpw against each robot's stored api_key_hash.
-    # In practice, keys are short-ish (43 chars) so we iterate.
+    # Iterate robots and bcrypt.checkpw against each stored hash.
     async for r in db.robots.find({}, {"_id": 0}):
         stored = r.get("api_key_hash", "")
         if stored and bcrypt.checkpw(x_robot_key.encode(), stored.encode()):
             return r
-    _ = key_hash  # unused; kept for lint quiet
     raise HTTPException(401, "Invalid robot key")
 
 
