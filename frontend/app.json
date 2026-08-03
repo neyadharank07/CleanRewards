@@ -1,24 +1,35 @@
 {
   "expo": {
-    "name": "frontend",
+    "name": "CleanRewards",
     "slug": "frontend",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "frontend",
+    "scheme": "cleanrewards",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.emergent.greenvolunteer.dhyh4q"
+      "bundleIdentifier": "com.emergent.greenvolunteer.dhyh4q",
+      "infoPlist": {
+        "NSCameraUsageDescription": "Take before/after photos of cleanups.",
+        "NSPhotoLibraryUsageDescription": "Attach photos to your cleanup submissions.",
+        "NSLocationWhenInUseUsageDescription": "Tag cleanup and litter reports with your location."
+      }
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
-        "backgroundColor": "#000000"
+        "backgroundColor": "#34C759"
       },
       "edgeToEdgeEnabled": true,
-      "package": "com.emergent.greenvolunteer.dhyh4q"
+      "package": "com.emergent.greenvolunteer.dhyh4q",
+      "permissions": [
+        "CAMERA",
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION",
+        "READ_MEDIA_IMAGES"
+      ]
     },
     "web": {
       "bundler": "metro",
@@ -33,7 +44,26 @@
           "image": "./assets/images/splash-image.png",
           "imageWidth": 200,
           "resizeMode": "contain",
-          "backgroundColor": "#000000"
+          "backgroundColor": "#FFFFFF"
+        }
+      ],
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Take before/after photos of cleanups."
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Tag cleanup and litter reports with your location."
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Attach photos to your cleanup submissions.",
+          "cameraPermission": "Take before/after photos of cleanups."
         }
       ]
     ],
